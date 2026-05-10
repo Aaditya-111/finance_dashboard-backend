@@ -6,8 +6,18 @@ const getSummary = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data });
 });
 
+const getTaxEstimate = asyncHandler(async (req, res) => {
+  const data = await dashboardService.getTaxEstimate(req.user.id);
+  res.status(200).json({ success: true, data });
+});
+
 const getCategoryTotals = asyncHandler(async (req, res) => {
   const data = await dashboardService.getCategoryTotals(req.user.id);
+  res.status(200).json({ success: true, data });
+});
+
+const getPlatformBreakdown = asyncHandler(async (req, res) => {
+  const data = await dashboardService.getPlatformBreakdown(req.user.id);
   res.status(200).json({ success: true, data });
 });
 
@@ -21,4 +31,13 @@ const getRecentActivity = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data });
 });
 
-module.exports = { getSummary, getCategoryTotals, getMonthlyTrends, getRecentActivity };
+const getTopCategories = asyncHandler(async (req, res) => {
+  const data = await dashboardService.getTopCategories(req.user.id);
+  res.status(200).json({ success: true, data });
+});
+
+module.exports = {
+  getSummary, getTaxEstimate, getCategoryTotals,
+  getPlatformBreakdown, getMonthlyTrends,
+  getRecentActivity, getTopCategories
+};

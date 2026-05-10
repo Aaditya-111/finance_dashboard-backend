@@ -5,7 +5,9 @@ const getSummary = async (userId) => {
     `SELECT
       SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) AS total_income,
       SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) AS total_expense,
-      SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END) AS net_balance
+      SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END) AS net_balance,
+      COUNT(CASE WHEN status IN ('pending', 'overdue') THEN 1 END) AS pending_payments,
+      SUM(CASE WHEN status IN ('pending', 'overdue') THEN amount ELSE 0 END) AS pending_amount
      FROM records
      WHERE user_id = $1 AND deleted_at IS NULL`,
     [userId]
@@ -13,17 +15,59 @@ const getSummary = async (userId) => {
   return result.rows[0];
 };
 
-const getCategoryTotals = async (userId) => {
+const getTaxEstimate = async (userId) => {
   const result = await pool.query(
     `SELECT
-      category,
-      type,
-      SUM(amount) AS total,
-      COUNT(*) AS count
+      SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) AS total_income,
+      SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) AS total_expense
+     FROM records
+     WHERE user_id = $1 AND deleted_at IS NULL
+     AND EXTRACT(YEAR FROM date) = EXTRACT(YEAR FROM NOW())`,
+    [userId]
+  );
+
+  const { total_income, total_expense } = result.rows[0];
+  const net = parseFloat(total_income || 0) - parseFloat(total_expense || 0);
+
+  // Indian freelancer tax slabs
+  let estimated_tax = 0;
+  if (net <= 250000) estimated_tax = 0;
+  else if (net <= 500000) estimated_tax = (net - 250000) * 0.05;
+  else if (net <= 1000000) estimated_tax = 12500 + (net - 500000) * 0.20;
+  else estimated_tax = 112500 + (net - 1000000) * 0.30;
+
+  return {
+    total_income: parseFloat(total_income || 0),
+    total_expense: parseFloat(total_expense || 0),
+    net_income: net,
+    estimated_tax: Math.round(estimated_tax),
+    note: 'Estimated based on Indian income tax slabs for FY. Consult a CA for accurate filing.'
+  };
+};
+
+const getCategoryTotals = async (userId) => {
+  const result = await pool.query(
+    `SELECT category, type, SUM(amount) AS total, COUNT(*) AS count
      FROM records
      WHERE user_id = $1 AND deleted_at IS NULL
      GROUP BY category, type
      ORDER BY total DESC`,
+    [userId]
+  );
+  return result.rows;
+};
+
+const getPlatformBreakdown = async (userId) => {
+  const result = await pool.query(
+    `SELECT
+      platform,
+      SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) AS income,
+      SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) AS expense,
+      COUNT(*) AS transactions
+     FROM records
+     WHERE user_id = $1 AND deleted_at IS NULL
+     GROUP BY platform
+     ORDER BY income DESC`,
     [userId]
   );
   return result.rows;
@@ -56,11 +100,27 @@ const getRecentActivity = async (userId) => {
   const result = await pool.query(
     `SELECT * FROM records
      WHERE user_id = $1 AND deleted_at IS NULL
-     ORDER BY created_at DESC
-     LIMIT 10`,
+     ORDER BY created_at DESC LIMIT 10`,
     [userId]
   );
   return result.rows;
 };
 
-module.exports = { getSummary, getCategoryTotals, getMonthlyTrends, getRecentActivity };
+const getTopCategories = async (userId) => {
+  const result = await pool.query(
+    `SELECT category, SUM(amount) AS total
+     FROM records
+     WHERE user_id = $1 AND type = 'income' AND deleted_at IS NULL
+     GROUP BY category
+     ORDER BY total DESC
+     LIMIT 5`,
+    [userId]
+  );
+  return result.rows;
+};
+
+module.exports = {
+  getSummary, getTaxEstimate, getCategoryTotals,
+  getPlatformBreakdown, getMonthlyTrends,
+  getRecentActivity, getTopCategories
+};
